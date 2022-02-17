@@ -1,1 +1,4 @@
-resolver: lts-15.5
+resolver: lts-17.2
+extra-deps:
+  - git: git@github.com:ivanmoreau/prep_textos.git
+    commit: 018805c34cd791b7b77f04217c3f2c0edbca2785

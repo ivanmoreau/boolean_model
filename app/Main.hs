@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Boolean_model (someFunc)
+import BooleanModel (someFunc)
 
 
 main :: IO ()
