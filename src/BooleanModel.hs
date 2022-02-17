@@ -13,13 +13,15 @@ module BooleanModel
   )
 where
 
-import Data.List (delete, nub)
-import Data.Map (Map, delete, fromList, insert, insertWith, (!))
+import qualified Data.ByteString as BS
+import           Data.List ((\\), delete, intersect, nub, union)
 import qualified Data.Map as Dm
-import Data.Text (Text, pack, replace, splitOn)
-import Data.Text.IO as DT (readFile)
-
-
+import           Data.Map (Map, delete, fromList, insert, insertWith, (!))
+import           Data.Serialize
+import           Data.Serialize.Text ()
+import           Data.Text (Text, pack, replace, splitOn)
+import           Data.Text.IO as DT (readFile)
+import           Query
 
 rone :: [Text]
 rone = ["$user tweeted ", " $ht", "$ht ", " $user", "$user "]
@@ -62,6 +64,30 @@ readTest name = do
   c <- DT.readFile name
   let r = genMatrix c
   return r
+
+
+save e name = do
+  BS.writeFile name (encode e)
+
+
+readd :: Text -> Map Text (Map Int Bool) -> [Int]
+readd t m = case Dm.lookup t m of
+  Just v -> map fst (Dm.toList (Dm.filter (== True) v))
+  Nothing -> []
+
+
+
+pw :: Query -> Int -> Map Text (Map Int Bool) -> [Int]
+pw (QAnd l r) t m = intersect (pw l t m) (pw r t m)
+pw (QOr l r) t m = union (pw l t m) (pw r t m)
+pw (QNot e) t m = [0..t] \\ (pw e t m)
+pw (QP v) t m = readd v m
+
+prep :: Query -> Map Text (Map Int Bool) -> [Int]
+prep q m = pw q (Dm.size (snd (Dm.elemAt 0 m))) m
+
+
+
 
 
 someFunc :: IO ()
