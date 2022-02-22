@@ -3,141 +3,95 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# OPTIONS_GHC -fno-cse #-}
 
 module Main (main) where
 
-import           BooleanModel (someFunc)
-import qualified Brick.AttrMap as A
-import Brick
-import qualified Brick.Focus as F
-import           Brick.Forms ((@@=))
-import qualified Brick.Main as M
-import qualified Brick.Types as T
-import           Brick.Util (fg, on)
-import qualified Brick.Widgets.Border as B
+import           BooleanModel (someFunc, genMatrix, search)
+import qualified Data.ByteString as BS
+import           Data.List
+import qualified Data.Map as Dm
+import           Data.Serialize
 
-import qualified Brick.Widgets.Center as C
-import           Brick.Widgets.Core
-  ( (<+>)
-  , (<=>)
-  , hLimit
-  , updateAttrMap, vLimit
-  , str
-  , withAttr)
-import qualified Brick.Widgets.Edit as E
+import           Data.Serialize.Text ()
 import           Data.Text
-import qualified Graphics.Vty as V
-import           Lens.Micro
-import           Lens.Micro
-import           Lens.Micro.TH
-import           Lens.Micro.TH
+import           Data.Text.IO as DT (readFile, putStrLn)
+import System.Console.CmdArgs
+import           Query (doQuery)
 
-data Name = Edit1
-          | Edit2
-          | Cleaned
-          | Matrix
-          | Docs
-          | CleanedButton
-          | MatrixButton
-          | DocsButton
-          deriving (Ord, Show, Eq)
+type Matrix = (Dm.Map Text (Dm.Map Int Bool))
 
-data St =
-    St { _focusRing :: F.FocusRing Name
-       , _edit1 :: E.Editor String Name
-       , _edit2 :: E.Editor String Name
-       , _cleaned :: E.Editor String Name
-       , _matrix :: E.Editor String Name
-       , _docs :: E.Editor String Name
-       }
+readTest :: FilePath -> IO Matrix
+readTest name = do
+  c <- DT.readFile name
+  let r = genMatrix c
+  return r
 
-makeLenses ''St
+save :: Serialize a => a -> FilePath -> IO ()
+save e name = do
+  BS.writeFile name (encode e)
 
-titleAttr :: A.AttrName
-titleAttr = "title"
+handleMatrix :: Text -> Text -> IO (Either String a)
+handleMatrix input output = do
+  matrix <- readTest (unpack input)
+  save matrix (unpack output)
+  return (Left "Done.")
 
-borderMappings :: [(A.AttrName, V.Attr)]
-borderMappings =
-    [ (B.borderAttr,         fg V.white )
-    , (titleAttr,            fg V.white)
-    ]
 
-drawUI :: St -> [T.Widget Name]
-drawUI st = [ui]
-    where
-        e1 = F.withFocusRing (st^.focusRing) (E.renderEditor (str . Prelude.unlines)) (st^.edit1)
-        e2 = F.withFocusRing (st^.focusRing) (E.renderEditor (str . Prelude.unlines)) (st^.cleaned)
-        e3 = F.withFocusRing (st^.focusRing) (E.renderEditor (str . Prelude.unlines)) (st^.matrix)
-        e4 = F.withFocusRing (st^.focusRing) (E.renderEditor (str . Prelude.unlines)) (st^.docs)
+load :: Serialize a => Text -> IO (Either String a)
+load name = do
+  bstr <- BS.readFile (unpack name)
+  let m = decode bstr
+  return m
 
-        ui = updateAttrMap (A.applyAttrMappings borderMappings) $
-            B.borderWithLabel (withAttr titleAttr $ str "Boolean Model") $
-            vBox [opt, B.hBorder, browser]
-        browser = str "Press Tab to switch between editors, Esc to quit."
-        opt = hBox [input, B.vBorder, loader]
-        input = C.center $ str "Query: " <+> (vLimit 1 e1) 
-        loader = hLimit 30 $ vBox [
-            str "Prep file:  " <+> (vLimit 1 e2),
-            vLimit 1 $ C.center $ clickable CleanedButton $ str "[[Load]]",
-            str "Matrix dile:" <+> (vLimit 1 e3),
-            vLimit 1 $ C.center $ clickable MatrixButton $ str "[[Load]]",
-            str "Og file:    " <+> (vLimit 1 e4),
-            vLimit 1 $ C.center $ clickable DocsButton $ str "[[Load]]"
-            ]
-        old = C.center $
-            (str "Input 1 (unlimited): " <+>  (hLimit 30 $ vLimit 5 e1)) <=>
-            str " " <=>
-            (str "Input 2 (limited to 2 lines): " <+> (hLimit 30 e2)) <=>
-            str " " <=>
-            str "Press Tab to switch between editors, Esc to quit."
+stripLines ::  [Text] -> [Int] -> Int -> [Text]
+stripLines _ [] _ = []
+stripLines [] _ _ = []
+stripLines (l:lines) (c:cc) c₀
+  | c == c₀ = pack ("[" ++ show c₀ ++ "] " ++ (unpack l)):stripLines lines (cc) (c₀ + 1)
+  | otherwise = stripLines lines (c:cc) (c₀ + 1)
 
-appEvent :: St -> T.BrickEvent Name e -> T.EventM Name (T.Next St)
-appEvent st (T.VtyEvent ev) =
-    case ev of
-        V.EvKey V.KEsc [] -> M.halt st
-        V.EvKey (V.KChar '\t') [] -> M.continue $ st & focusRing %~ F.focusNext
-        V.EvKey V.KBackTab [] -> M.continue $ st & focusRing %~ F.focusPrev
+handleQuery :: Text -> Text -> String -> IO (Either String Text)
+handleQuery query matrix_ defs =
+  case doQuery query of
+    Right i -> do
+      val <- load matrix_
+      case val of
+        Right matrix -> do
+          let l = search i matrix
+          fs <- DT.readFile defs
+          let ss = splitOn "\n" fs
+          let yy = stripLines ss l 0
+          return $ Right (Data.Text.intercalate "\n" yy)
+        Left err -> do return $ Left (show err)
+    Left err -> do return $ Left (show err)
 
-        _ -> M.continue =<< case F.focusGetCurrent (st^.focusRing) of
-               Just Edit1 -> T.handleEventLensed st edit1 E.handleEditorEvent ev
-               Just Edit2 -> T.handleEventLensed st edit2 E.handleEditorEvent ev
-               Just Cleaned -> T.handleEventLensed st cleaned E.handleEditorEvent ev
-               Just Matrix -> T.handleEventLensed st matrix E.handleEditorEvent ev
-               Just Docs -> T.handleEventLensed st docs E.handleEditorEvent ev
-               Nothing -> return st
-appEvent st _ = M.continue st
 
-initialState :: St
-initialState =
-    St (F.focusRing [Edit1, Cleaned, CleanedButton, Matrix, MatrixButton, Docs, DocsButton])
-       (E.editor Edit1 Nothing "")
-       (E.editor Edit2 (Just 2) "")
-       (E.editor Cleaned (Just 1) "")
-       (E.editor Matrix (Just 1) "")
-       (E.editor Docs (Just 1) "")
+handle :: Text -> Matrix -> IO (Either String Matrix)
+handle text m = f (Data.List.filter (/= "") (splitOn " " text))
+  where f (":matrix":input:output:[]) = handleMatrix input output
+        f (":load":input:[]) = load input
+        f _ = error "text"
 
-theMap :: A.AttrMap
-theMap = A.attrMap V.defAttr
-    [ (E.editAttr,                   V.white `on` V.brightBlack)
-    , (E.editFocusedAttr,            V.black `on` V.white)
-    ]
+something :: BoleanModel -> IO (Either String Text)
+something (Matrix from to) = handleMatrix (pack from) (pack to)
+something (Query defs from q) = handleQuery (pack q) (pack from) defs
 
-appCursor :: St -> [T.CursorLocation Name] -> Maybe (T.CursorLocation Name)
-appCursor = F.focusRingCursor (^.focusRing)
 
-theApp :: M.App St e Name
-theApp =
-    M.App { M.appDraw = drawUI
-          , M.appChooseCursor = appCursor
-          , M.appHandleEvent = appEvent
-          , M.appStartEvent = return
-          , M.appAttrMap = const theMap
-          }
+data BoleanModel = Matrix {from :: String, to :: String}
+  | Query {ogfile :: String, matrix :: String, query :: String}
+  deriving (Show, Data, Typeable)
+
+genmatrix = Matrix {from = def, to = def}
+doquery = Query {ogfile = def, matrix = def, query = def}
+
 
 main :: IO ()
 main = do
-    st <- M.defaultMain theApp initialState
-    putStrLn "In input 1 you entered:\n"
-    putStrLn $ Prelude.unlines $ E.getEditContents $ st^.edit1
-    putStrLn "In input 2 you entered:\n"
-    putStrLn $ Prelude.unlines $ E.getEditContents $ st^.edit2
+    args <- cmdArgs (modes [genmatrix,doquery])
+    f <- something args
+    case f of
+      Right x -> DT.putStrLn x
+      Left x -> Prelude.putStrLn x
+    

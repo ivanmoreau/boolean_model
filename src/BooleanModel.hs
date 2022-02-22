@@ -1,5 +1,6 @@
 {- |
 Copyright: (c) 2022 Iván Molina Rebolledo
+
 SPDX-License-Identifier: GPL-3.0-only
 Maintainer: Iván Molina Rebolledo <ivanmolinarebolledo@gmail.com>
 
@@ -9,18 +10,19 @@ See README for more info
 {-# LANGUAGE OverloadedStrings #-}
 
 module BooleanModel
-  ( someFunc,
+  ( someFunc, genMatrix, search
   )
 where
 
 import qualified Data.ByteString as BS
-import           Data.List ((\\), delete, intersect, nub, union)
+import           Data.List ((\\), delete, intersect, nub, sort, union)
 import qualified Data.Map as Dm
 import           Data.Map (Map, delete, fromList, insert, insertWith, (!))
 import           Data.Serialize
 import           Data.Serialize.Text ()
 import           Data.Text (Text, pack, replace, splitOn)
 import           Data.Text.IO as DT (readFile)
+import           Debug.Trace (trace)
 import           Query
 
 rone :: [Text]
@@ -60,15 +62,6 @@ genMatrix t =
       em = emptymatrix gw (length ts)
    in byLine ts em 0
 
-readTest name = do
-  c <- DT.readFile name
-  let r = genMatrix c
-  return r
-
-
-save e name = do
-  BS.writeFile name (encode e)
-
 
 readd :: Text -> Map Text (Map Int Bool) -> [Int]
 readd t m = case Dm.lookup t m of
@@ -78,17 +71,18 @@ readd t m = case Dm.lookup t m of
 
 
 pw :: Query -> Int -> Map Text (Map Int Bool) -> [Int]
-pw (QAnd l r) t m = intersect (pw l t m) (pw r t m)
-pw (QOr l r) t m = union (pw l t m) (pw r t m)
+pw (QAnd l r) t m = sort $ (pw l t m) `intersect` (pw r t m)
+pw (QOr l r) t m = sort $ (pw l t m) `union` (pw r t m)
 pw (QNot e) t m = [0..t] \\ (pw e t m)
 pw (QP v) t m = readd v m
 
-prep :: Query -> Map Text (Map Int Bool) -> [Int]
-prep q m = pw q (Dm.size (snd (Dm.elemAt 0 m))) m
+search :: Query -> Map Text (Map Int Bool) -> [Int]
+search q m = pw q (Dm.size (snd (Dm.elemAt 0 m))) m
 
 
 
 
 
 someFunc :: IO ()
+
 someFunc = putStrLn ("someFunc" :: String)

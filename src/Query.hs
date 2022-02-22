@@ -16,7 +16,12 @@ lan =
     { identStart = alphaNum,
       identLetter = alphaNum <|> oneOf "'",
       reservedOpNames = ["not", "and", "or"],
-      caseSensitive = False
+      caseSensitive = False,
+      commentStart = "{-",
+      commentEnd = "-}", commentLine = "--", nestedComments = False,
+      opStart        = opLetter lan,
+      opLetter       = oneOf ":!#$%&*+./<=>?@\\^|-~",
+      reservedNames  = []
     }
 
 lexer :: GenTokenParser Text u Identity
@@ -36,12 +41,13 @@ data Query
   | QNot Query
   | QAnd Query Query
   | QOr Query Query
+  deriving (Show)
 
 par :: ParsecT Text () Identity Query
-par = pand <|> por
+par = pand
 
 pand :: Parser Query
-pand = term `chainl1` (do treservedOp "and"; return (QAnd))
+pand = por `chainl1` (do treservedOp "and"; return (QAnd))
 
 por :: Parser Query
 por = term `chainl1` (do treservedOp "or"; return (QOr))

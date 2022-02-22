@@ -42,14 +42,14 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     BooleanModel
+  exposed-modules:     BooleanModel, Query
   build-depends:       PrepTextos, text, containers, cereal, bytestring, cereal-text, parsec
 
 executable boolean_model
   import:              common-options
   hs-source-dirs:      app
   main-is:             Main.hs
-  build-depends:       BooleanModel, brick, microlens-th, microlens, text, vty
+  build-depends:       BooleanModel, brick, microlens-th, microlens, text, vty, cmdargs, bytestring, cereal, cereal-text, containers
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N
